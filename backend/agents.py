@@ -1,6 +1,9 @@
 import base64
+import math
 import mimetypes
+import os
 import sys
+from functools import lru_cache
 from typing import TypedDict, Literal
 
 from pydantic import BaseModel
@@ -12,10 +15,16 @@ from langgraph.graph import StateGraph, START, END
 
 
 # =====================================================================
-# Models
+# Settings
 # =====================================================================
-llm = ChatGoogleGenerativeAI(model="gemini-3.8-flash", temperature=0)
-embeddings = GoogleGenerativeAIEmbeddings(model="gemini-embedding-001")
+# FAKE_LLM=1 replaces the classifier and drafter with simple rules, so you
+# can build and test the web app without using generate quota.
+# Embeddings are NOT faked: the duplicate check and department lookup
+# still need GOOGLE_API_KEY.
+FAKE_LLM = os.getenv("FAKE_LLM") == "1"
+
+DESC_T = 0.70   # issue similarity needed to count as the same problem
+LOC_T = 0.75    # place similarity needed to count as the same place
 
 
 class Classification(BaseModel):
@@ -24,12 +33,25 @@ class Classification(BaseModel):
     reason: str
 
 
-classifier_llm = llm.with_structured_output(Classification)
+# =====================================================================
+# Lazy setup: nothing here calls an API until first use
+# =====================================================================
+@lru_cache(maxsize=None)
+def get_llm():
+    return ChatGoogleGenerativeAI(model="gemini-3.8-flash", temperature=0)
 
 
-# =====================================================================
-# Department rules (made-up examples) -> searchable store
-# =====================================================================
+@lru_cache(maxsize=None)
+def get_classifier_llm():
+    return get_llm().with_structured_output(Classification)
+
+
+@lru_cache(maxsize=None)
+def get_embeddings():
+    return GoogleGenerativeAIEmbeddings(model="gemini-embedding-001")
+
+
+# Department rules (made-up examples)
 RULES = [
     {"category": "road_damage", "department": "Roads Dept",
      "desk": "Major Roads Cell", "sla_hours": 24,
@@ -59,26 +81,58 @@ RULES = [
              "no supply to a house."},
 ]
 
-rules_store = InMemoryVectorStore.from_documents(
-    [
-        Document(page_content=r["text"],
-                 metadata={k: v for k, v in r.items() if k != "text"})
-        for r in RULES
-    ],
-    embeddings,
-)
+
+@lru_cache(maxsize=None)
+def get_rules_store():
+    return InMemoryVectorStore.from_documents(
+        [
+            Document(page_content=r["text"],
+                     metadata={k: v for k, v in r.items() if k != "text"})
+            for r in RULES
+        ],
+        get_embeddings(),
+    )
+
+
+def cosine(a, b):
+    dot = sum(x * y for x, y in zip(a, b))
+    na = math.sqrt(sum(x * x for x in a))
+    nb = math.sqrt(sum(y * y for y in b))
+    return dot / (na * nb) if na and nb else 0.0
 
 
 # =====================================================================
-# Complaint memory (for duplicate detection). Empty at start.
-# It lives in memory only, so it resets every run. A database comes later.
+# Fake versions (used only when FAKE_LLM=1)
 # =====================================================================
-desc_store = InMemoryVectorStore(embeddings)   # what the problem is
-loc_store = InMemoryVectorStore(embeddings)    # where it is
-known_ids = []
+def fake_classify(text: str) -> Classification:
+    t = text.lower()
+    if any(w in t for w in ["pothole", "crater", "road"]):
+        category = "road_damage"
+    elif any(w in t for w in ["garbage", "rubbish", "waste"]):
+        category = "garbage"
+    elif any(w in t for w in ["streetlight", "lamp", "light"]):
+        category = "streetlight"
+    elif any(w in t for w in ["pipe", "leak", "water"]):
+        category = "water_leak"
+    else:
+        category = "other"
+    high = any(w in t for w in ["dangerous", "school", "burst", "flood", "accident"])
+    return Classification(
+        category=category,
+        severity="high" if high else "medium",
+        reason=text,
+    )
 
-DESC_T = 0.70   # issue similarity needed to count as the same problem
-LOC_T = 0.75    # place similarity needed to count as the same place
+
+def fake_letter(state) -> str:
+    return (
+        f"[Date]\n\nTo: {state['desk']}, {state['department']}\n\n"
+        f"Subject: {state['category'].replace('_', ' ').title()} at "
+        f"{state.get('location', 'unknown')}\n\n"
+        f"Dear Sir/Madam,\n\n{state['reason']}. "
+        f"Please take action within {state['sla_hours']} hours.\n\n"
+        f"Sincerely,\n[Citizen Name]\n\n(Sample letter: FAKE_LLM mode)"
+    )
 
 
 # =====================================================================
@@ -88,11 +142,14 @@ class ComplaintState(TypedDict, total=False):
     text: str
     image_path: str
     location: str
+    complaint_id: str      # this complaint's own reference, e.g. C-7
+    known: list            # earlier complaints to compare against (from the database)
     category: str
     severity: str
     reason: str
-    complaint_id: str
     duplicate_of: str
+    desc_vec: list         # saved with the complaint for future comparisons
+    loc_vec: list
     department: str
     desk: str
     sla_hours: int
@@ -123,7 +180,10 @@ def build_message(state: ComplaintState):
 
 
 def classifier(state: ComplaintState):
-    result = classifier_llm.invoke([build_message(state)])
+    if FAKE_LLM:
+        result = fake_classify(state["text"])
+    else:
+        result = get_classifier_llm().invoke([build_message(state)])
     return {
         "category": result.category,
         "severity": result.severity,
@@ -132,35 +192,23 @@ def classifier(state: ComplaintState):
 
 
 def duplicate_check(state: ComplaintState):
-    desc = state["reason"]
-    loc = state.get("location", "unknown")
+    embeddings = get_embeddings()
+    desc_vec = embeddings.embed_query(state["reason"])
+    loc_vec = embeddings.embed_query(state.get("location", "unknown"))
     cat = state["category"]
-    desc_vec = embeddings.embed_query(desc)
-    loc_vec = embeddings.embed_query(loc)
 
-    candidates = desc_store.similarity_search_with_score_by_vector(
-        desc_vec, k=5,
-        filter=lambda d: d.metadata["category"] == cat,
-    )
-    for doc, d_score in candidates:
-        cid = doc.metadata["id"]
-        hits = loc_store.similarity_search_with_score_by_vector(
-            loc_vec, k=1,
-            filter=lambda d, i=cid: d.metadata["id"] == i,
-        )
-        l_score = hits[0][1]
-        print(f"   [duplicate check] vs {cid}: "
+    for k in state.get("known", []):
+        if k["category"] != cat:
+            continue
+        d_score = cosine(desc_vec, k["desc_vec"])
+        l_score = cosine(loc_vec, k["loc_vec"])
+        print(f"   [duplicate check] vs {k['ref']}: "
               f"issue {d_score:.3f} | place {l_score:.3f}")
         if d_score >= DESC_T and l_score >= LOC_T:
-            return {"duplicate_of": cid}
+            return {"duplicate_of": k["ref"]}
 
-    # Not a duplicate: remember it for future complaints
-    cid = f"C-{len(known_ids) + 1}"
-    known_ids.append(cid)
-    meta = {"id": cid, "category": cat}
-    desc_store.add_documents([Document(page_content=desc, metadata=meta)])
-    loc_store.add_documents([Document(page_content=loc, metadata=meta)])
-    return {"complaint_id": cid, "duplicate_of": ""}
+    # Not a duplicate: hand the vectors back so the caller can save them
+    return {"duplicate_of": "", "desc_vec": desc_vec, "loc_vec": loc_vec}
 
 
 def link_duplicate(state: ComplaintState):
@@ -176,7 +224,7 @@ def router(state: ComplaintState):
         f"{state['text']}. {state['reason']}. "
         f"Location: {state.get('location', 'unknown')}"
     )
-    doc, score = rules_store.similarity_search_with_score(
+    doc, score = get_rules_store().similarity_search_with_score(
         query,
         k=1,
         filter=lambda d: d.metadata["category"] == state["category"],
@@ -192,6 +240,8 @@ def router(state: ComplaintState):
 
 
 def drafter(state: ComplaintState):
+    if FAKE_LLM:
+        return {"letter": fake_letter(state)}
     prompt = f"""Write a formal complaint letter to the {state['department']}, {state['desk']}.
 
 Facts you may use:
@@ -208,7 +258,7 @@ Rules:
 - Do not invent facts, names, dates or reference numbers.
 - Use [Citizen Name] and [Date] as placeholders.
 """
-    response = llm.invoke(prompt)
+    response = get_llm().invoke(prompt)
     return {"letter": str(response.text)}
 
 
@@ -252,6 +302,28 @@ graph.add_edge("link_duplicate", END)
 graph.add_edge("ask_for_details", END)
 
 app = graph.compile()
+
+
+def process_complaint(
+    text: str,
+    location: str = "",
+    image_path: str | None = None,
+    known: list | None = None,
+    complaint_id: str = "C-new",
+) -> dict:
+    """The one function Django calls. Returns the final state as a dict.
+
+    known: earlier complaints as dicts with keys ref, category, desc_vec, loc_vec.
+    """
+    state = {
+        "text": text,
+        "location": location or "unknown",
+        "known": known or [],
+        "complaint_id": complaint_id,
+    }
+    if image_path:
+        state["image_path"] = image_path
+    return app.invoke(state)
 
 
 # =====================================================================
@@ -367,49 +439,52 @@ def new_record(cid, department, desk, sla_hours, created_hour=0):
 
 
 # =====================================================================
-# Demos
+# Command-line demos
+#   python agents.py            full pipeline on four sample complaints
+#   python agents.py followup   follow-up simulation (no model calls)
 # =====================================================================
 def run_demo():
-    """Full pipeline on two complaints. Uses generate calls (2 to 3 per run)."""
-    tests = [
-        # 1. A new complaint, with a photo
-        {"text": "Please look at this",
-         "image_path": "pothole.jpg",
-         "location": "80 Feet Road, Indiranagar, Bengaluru"},
-        # 2. Another citizen, same photo and place, different words
-        {"text": "Very dangerous pothole, someone will fall here",
-         "image_path": "pothole.jpg",
-         "location": "Outside the school gate, 80 Feet Road, Indiranagar"},
+    samples = [
+        ("Huge pothole near the school gate, very dangerous",
+         "80 Feet Road, Indiranagar, Bengaluru"),
+        ("Dangerous pothole outside the school, bikes are slipping",
+         "Outside the school gate, 80 Feet Road, Indiranagar"),
+        ("Garbage not collected for four days",
+         "5th Cross, Jayanagar 4th Block, Bengaluru"),
+        ("something is wrong here", "unknown"),
     ]
-
-    for t in tests:
+    print("Mode:", "FAKE_LLM (rules)" if FAKE_LLM else "real model")
+    known = []   # the demo's stand-in for the database
+    for n, (text, location) in enumerate(samples, start=1):
+        cid = f"C-{n}"
         print("=" * 60)
-        print("Complaint:", t["text"])
-        result = app.invoke(t)
+        print("Complaint:", text)
+        result = process_complaint(text, location, known=known, complaint_id=cid)
         print(f"Category: {result['category']} | severity: {result['severity']}")
         if result.get("duplicate_of"):
             print("Result: DUPLICATE of", result["duplicate_of"])
-            print(result["note"])
         elif result.get("letter"):
-            print("Complaint ID:", result["complaint_id"])
+            print("Complaint ID:", cid)
             print("Routed to:", result["department"], "|", result["desk"],
                   "| SLA", result["sla_hours"], "h")
-            print("Matched rule:", result["rule"])
             print()
             print(result["letter"])
+            known.append({
+                "ref": cid, "category": result["category"],
+                "desc_vec": result["desc_vec"], "loc_vec": result["loc_vec"],
+            })
         else:
             print(result.get("note"))
 
 
 def simulate():
-    """Follow-up agent on a simulated clock. Makes no model calls."""
     records = {
         "C-1": new_record("C-1", "Roads Dept", "Ward Engineer", 24),
         "C-2": new_record("C-2", "Solid Waste Dept", "Collection Desk", 48),
     }
     resolved_at = {"C-2": 45}   # C-1 is never resolved
 
-    for hour in range(0, 85, 3):          # the "scheduler": a check every 3 hours
+    for hour in range(0, 85, 3):
         for cid in list(records):
             rec = records[cid]
             if rec["status"] == "open" and hour >= resolved_at.get(cid, 10**9):
