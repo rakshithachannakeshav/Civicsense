@@ -1,4 +1,5 @@
 import base64
+import math
 import mimetypes
 import os
 import sys
@@ -93,14 +94,11 @@ def get_rules_store():
     )
 
 
-# Complaint memory for duplicate detection (in memory only for now;
-# step 9c moves this into the database)
-@lru_cache(maxsize=None)
-def get_memory():
-    return InMemoryVectorStore(get_embeddings()), InMemoryVectorStore(get_embeddings())
-
-
-known_ids = []
+def cosine(a, b):
+    dot = sum(x * y for x, y in zip(a, b))
+    na = math.sqrt(sum(x * x for x in a))
+    nb = math.sqrt(sum(y * y for y in b))
+    return dot / (na * nb) if na and nb else 0.0
 
 
 # =====================================================================
@@ -144,11 +142,14 @@ class ComplaintState(TypedDict, total=False):
     text: str
     image_path: str
     location: str
+    complaint_id: str      # this complaint's own reference, e.g. C-7
+    known: list            # earlier complaints to compare against (from the database)
     category: str
     severity: str
     reason: str
-    complaint_id: str
     duplicate_of: str
+    desc_vec: list         # saved with the complaint for future comparisons
+    loc_vec: list
     department: str
     desk: str
     sla_hours: int
@@ -192,35 +193,22 @@ def classifier(state: ComplaintState):
 
 def duplicate_check(state: ComplaintState):
     embeddings = get_embeddings()
-    desc_store, loc_store = get_memory()
-    desc = state["reason"]
-    loc = state.get("location", "unknown")
+    desc_vec = embeddings.embed_query(state["reason"])
+    loc_vec = embeddings.embed_query(state.get("location", "unknown"))
     cat = state["category"]
-    desc_vec = embeddings.embed_query(desc)
-    loc_vec = embeddings.embed_query(loc)
 
-    candidates = desc_store.similarity_search_with_score_by_vector(
-        desc_vec, k=5,
-        filter=lambda d: d.metadata["category"] == cat,
-    )
-    for doc, d_score in candidates:
-        cid = doc.metadata["id"]
-        hits = loc_store.similarity_search_with_score_by_vector(
-            loc_vec, k=1,
-            filter=lambda d, i=cid: d.metadata["id"] == i,
-        )
-        l_score = hits[0][1]
-        print(f"   [duplicate check] vs {cid}: "
+    for k in state.get("known", []):
+        if k["category"] != cat:
+            continue
+        d_score = cosine(desc_vec, k["desc_vec"])
+        l_score = cosine(loc_vec, k["loc_vec"])
+        print(f"   [duplicate check] vs {k['ref']}: "
               f"issue {d_score:.3f} | place {l_score:.3f}")
         if d_score >= DESC_T and l_score >= LOC_T:
-            return {"duplicate_of": cid}
+            return {"duplicate_of": k["ref"]}
 
-    cid = f"C-{len(known_ids) + 1}"
-    known_ids.append(cid)
-    meta = {"id": cid, "category": cat}
-    desc_store.add_documents([Document(page_content=desc, metadata=meta)])
-    loc_store.add_documents([Document(page_content=loc, metadata=meta)])
-    return {"complaint_id": cid, "duplicate_of": ""}
+    # Not a duplicate: hand the vectors back so the caller can save them
+    return {"duplicate_of": "", "desc_vec": desc_vec, "loc_vec": loc_vec}
 
 
 def link_duplicate(state: ComplaintState):
@@ -316,9 +304,23 @@ graph.add_edge("ask_for_details", END)
 app = graph.compile()
 
 
-def process_complaint(text: str, location: str = "", image_path: str | None = None) -> dict:
-    """The one function Django will call. Returns the final state as a dict."""
-    state = {"text": text, "location": location or "unknown"}
+def process_complaint(
+    text: str,
+    location: str = "",
+    image_path: str | None = None,
+    known: list | None = None,
+    complaint_id: str = "C-new",
+) -> dict:
+    """The one function Django calls. Returns the final state as a dict.
+
+    known: earlier complaints as dicts with keys ref, category, desc_vec, loc_vec.
+    """
+    state = {
+        "text": text,
+        "location": location or "unknown",
+        "known": known or [],
+        "complaint_id": complaint_id,
+    }
     if image_path:
         state["image_path"] = image_path
     return app.invoke(state)
@@ -452,19 +454,25 @@ def run_demo():
         ("something is wrong here", "unknown"),
     ]
     print("Mode:", "FAKE_LLM (rules)" if FAKE_LLM else "real model")
-    for text, location in samples:
+    known = []   # the demo's stand-in for the database
+    for n, (text, location) in enumerate(samples, start=1):
+        cid = f"C-{n}"
         print("=" * 60)
         print("Complaint:", text)
-        result = process_complaint(text, location)
+        result = process_complaint(text, location, known=known, complaint_id=cid)
         print(f"Category: {result['category']} | severity: {result['severity']}")
         if result.get("duplicate_of"):
             print("Result: DUPLICATE of", result["duplicate_of"])
         elif result.get("letter"):
-            print("Complaint ID:", result["complaint_id"])
+            print("Complaint ID:", cid)
             print("Routed to:", result["department"], "|", result["desk"],
                   "| SLA", result["sla_hours"], "h")
             print()
             print(result["letter"])
+            known.append({
+                "ref": cid, "category": result["category"],
+                "desc_vec": result["desc_vec"], "loc_vec": result["loc_vec"],
+            })
         else:
             print(result.get("note"))
 

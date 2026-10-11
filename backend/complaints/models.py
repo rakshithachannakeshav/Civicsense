@@ -13,7 +13,7 @@ class Complaint(models.Model):
     photo = models.ImageField(upload_to="photos/", blank=True, null=True)
 
     # What the agents decided
-    ref = models.CharField(max_length=20, blank=True)           # e.g. C-1, from the pipeline
+    ref = models.CharField(max_length=20, blank=True)           # e.g. C-1
     duplicate_of = models.CharField(max_length=20, blank=True)  # ref of the original
     status = models.CharField(max_length=20, choices=Status.choices,
                               default=Status.ROUTED)
@@ -26,6 +26,8 @@ class Complaint(models.Model):
     rule = models.TextField(blank=True)
     letter = models.TextField(blank=True)
     note = models.TextField(blank=True)
+    desc_vec = models.JSONField(null=True, blank=True)   # NEW: embedding of the issue
+    loc_vec = models.JSONField(null=True, blank=True)    # NEW: embedding of the place
 
     created_at = models.DateTimeField(auto_now_add=True)
 
