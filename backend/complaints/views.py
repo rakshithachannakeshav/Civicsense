@@ -1,7 +1,10 @@
 from rest_framework import mixins, viewsets
+from rest_framework.decorators import action
 from rest_framework.exceptions import APIException
+from rest_framework.response import Response
 
-from agents import process_complaint
+from agents import new_record, process_complaint
+from .followup import check
 from .models import Complaint
 from .serializers import ComplaintSerializer
 
@@ -58,9 +61,33 @@ class ComplaintViewSet(mixins.CreateModelMixin,
             complaint.letter = result["letter"]
             complaint.desc_vec = result["desc_vec"]
             complaint.loc_vec = result["loc_vec"]
+
+            # Start follow-up tracking
+            rec = new_record(complaint.ref, complaint.department,
+                             complaint.desk, complaint.sla_hours)
+            complaint.fu_status = rec["status"]
+            complaint.fu_level = rec["level"]
+            complaint.fu_window = rec["window"]
+            complaint.fu_due_hour = rec["due_hour"]
+            complaint.fu_reminded = rec["reminded"]
+            complaint.fu_history = rec["history"]
         else:
             complaint.status = Complaint.Status.NEEDS_DETAILS
             complaint.department = result.get("department", "Pending")
             complaint.note = result.get("note", "")
 
         complaint.save()
+
+    @action(detail=True, methods=["post"])
+    def resolve(self, request, pk=None):
+        """An official marks the complaint as fixed."""
+        complaint = self.get_object()
+        if complaint.status != Complaint.Status.ROUTED or complaint.fu_status != "open":
+            return Response(
+                {"detail": "Only open, routed complaints can be resolved."},
+                status=400,
+            )
+        complaint.fu_status = "resolved"
+        complaint.save(update_fields=["fu_status"])
+        check(complaint)    # the follow-up graph closes it straight away
+        return Response(self.get_serializer(complaint).data)
