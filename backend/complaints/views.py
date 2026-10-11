@@ -7,6 +7,7 @@ from agents import new_record, process_complaint
 from .followup import check
 from .models import Complaint
 from .serializers import ComplaintSerializer
+import traceback
 
 
 class TriageUnavailable(APIException):
@@ -41,8 +42,9 @@ class ComplaintViewSet(mixins.CreateModelMixin,
                 known=known, complaint_id=complaint.ref,
             )
         except Exception:
+            traceback.print_exc()       # show the real error in the log
             complaint.delete()          # do not keep a half-processed complaint
-            raise TriageUnavailable()   # for example, when the daily quota is used up
+            raise TriageUnavailable()  # for example, when the daily quota is used up
 
         complaint.category = result.get("category", "")
         complaint.severity = result.get("severity", "")
