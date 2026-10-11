@@ -28,7 +28,13 @@ class Complaint(models.Model):
     note = models.TextField(blank=True)
     desc_vec = models.JSONField(null=True, blank=True)   # NEW: embedding of the issue
     loc_vec = models.JSONField(null=True, blank=True)    # NEW: embedding of the place
-
+        # Follow-up tracking (filled in when a complaint is routed)
+    fu_status = models.CharField(max_length=10, blank=True)  # open | resolved | closed | critical
+    fu_level = models.PositiveSmallIntegerField(default=0)   # 0 desk, 1 head, 2 commissioner
+    fu_window = models.PositiveIntegerField(null=True, blank=True)
+    fu_due_hour = models.PositiveIntegerField(null=True, blank=True)
+    fu_reminded = models.BooleanField(default=False)
+    fu_history = models.JSONField(default=list, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

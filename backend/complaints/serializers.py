@@ -12,5 +12,6 @@ class ComplaintSerializer(serializers.ModelSerializer):
         read_only_fields = [
             "ref", "duplicate_of", "status", "category", "severity", "reason",
             "department", "desk", "sla_hours", "rule", "letter", "note",
-            "created_at",
+            "created_at", "fu_status", "fu_level", "fu_window", "fu_due_hour",
+            "fu_reminded", "fu_history",
         ]
