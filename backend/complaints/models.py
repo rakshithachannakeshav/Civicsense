@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.db import models
 
 
@@ -6,6 +7,12 @@ class Complaint(models.Model):
         ROUTED = "routed", "Routed"
         DUPLICATE = "duplicate", "Duplicate"
         NEEDS_DETAILS = "needs_details", "Needs details"
+
+    # Who filed it (null for complaints created before login existed)
+    owner = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True,
+        on_delete=models.SET_NULL, related_name="complaints",
+    )
 
     # What the citizen sent
     text = models.TextField()
@@ -26,9 +33,10 @@ class Complaint(models.Model):
     rule = models.TextField(blank=True)
     letter = models.TextField(blank=True)
     note = models.TextField(blank=True)
-    desc_vec = models.JSONField(null=True, blank=True)   # NEW: embedding of the issue
-    loc_vec = models.JSONField(null=True, blank=True)    # NEW: embedding of the place
-        # Follow-up tracking (filled in when a complaint is routed)
+    desc_vec = models.JSONField(null=True, blank=True)   # embedding of the issue
+    loc_vec = models.JSONField(null=True, blank=True)    # embedding of the place
+
+    # Follow-up tracking (filled in when a complaint is routed)
     fu_status = models.CharField(max_length=10, blank=True)  # open | resolved | closed | critical
     fu_level = models.PositiveSmallIntegerField(default=0)   # 0 desk, 1 head, 2 commissioner
     fu_window = models.PositiveIntegerField(null=True, blank=True)

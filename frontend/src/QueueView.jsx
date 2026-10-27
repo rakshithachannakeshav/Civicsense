@@ -28,7 +28,7 @@ function stateClass(c) {
   return "";
 }
 
-export default function QueueView({ onOpen }) {
+export default function QueueView({ official, onOpen }) {
   const [complaints, setComplaints] = useState(null);
   const [error, setError] = useState("");
   const [filter, setFilter] = useState("open");
@@ -66,10 +66,11 @@ export default function QueueView({ onOpen }) {
   return (
     <>
       <div className="intro">
-        <h1>Complaints</h1>
+        <h1>{official ? "Complaints" : "My reports"}</h1>
         <p className="lede">
-          Open complaints are listed with the most urgent first: critical and
-          escalated complaints, then by severity.
+          {official
+            ? "Open complaints are listed with the most urgent first: critical and escalated complaints, then by severity."
+            : "The problems you have reported, and where each one stands."}
         </p>
       </div>
 

@@ -7,7 +7,7 @@ function parseLine(line) {
   return match ? { hour: match[1], text: match[2] } : { hour: "", text: line };
 }
 
-export default function DetailView({ id, onBack }) {
+export default function DetailView({ id, official, onBack }) {
   const [c, setC] = useState(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -32,7 +32,7 @@ export default function DetailView({ id, onBack }) {
     return (
       <>
         <button type="button" className="secondary back" onClick={onBack}>
-          Back to complaints
+          Back to the list
         </button>
         {error ? (
           <p className="error" role="alert">{error}</p>
@@ -50,7 +50,7 @@ export default function DetailView({ id, onBack }) {
     <div className="detail">
       <div>
         <button type="button" className="secondary back" onClick={onBack}>
-          Back to complaints
+          Back to the list
         </button>
       </div>
 
@@ -73,7 +73,7 @@ export default function DetailView({ id, onBack }) {
               <dd><span className={`sev sev-${c.severity}`}>{c.severity}</span></dd>
             </div>
           </dl>
-          {c.fu_status === "open" && (
+          {official && c.fu_status === "open" && (
             <button type="button" className="primary" onClick={resolve} disabled={busy}>
               {busy ? "Saving..." : "Mark as resolved"}
             </button>
