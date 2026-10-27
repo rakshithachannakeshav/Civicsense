@@ -1,0 +1,33 @@
+{
+  "_note": "Who is notified at each level of the escalation chain. These are placeholder addresses on example.com; replace them with real ones.",
+  "commissioner": "commissioner@example.com",
+  "departments": {
+    "Roads Dept": {
+      "head": "head.roads@example.com",
+      "desks": {
+        "Major Roads Cell": "major.roads@example.com",
+        "Ward Engineer": "ward.engineer@example.com"
+      }
+    },
+    "Solid Waste Dept": {
+      "head": "head.solidwaste@example.com",
+      "desks": {
+        "Collection Desk": "collection.desk@example.com",
+        "Bulk Waste Cell": "bulk.waste@example.com"
+      }
+    },
+    "Street Lighting Dept": {
+      "head": "head.lighting@example.com",
+      "desks": {
+        "Maintenance Desk": "lighting.maintenance@example.com"
+      }
+    },
+    "Water Supply Dept": {
+      "head": "head.water@example.com",
+      "desks": {
+        "Emergency Desk": "water.emergency@example.com",
+        "Service Desk": "water.service@example.com"
+      }
+    }
+  }
+}

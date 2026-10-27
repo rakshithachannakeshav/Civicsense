@@ -55,6 +55,8 @@ main.wrap { padding-block: 2rem 4rem; }
 label { font-weight: 600; font-size: 0.95rem; }
 
 input[type="text"],
+input[type="email"],
+input[type="password"],
 textarea {
   width: 100%;
   font: inherit;
@@ -148,3 +150,9 @@ tbody tr:last-child td { border-bottom: 0; }
 .timeline { list-style: none; margin: 0.9rem 0 0; padding: 0 0 0 1rem; border-left: 2px solid var(--line); display: flex; flex-direction: column; gap: 0.75rem; }
 .timeline li { display: grid; grid-template-columns: 5.5rem minmax(0, 1fr); gap: 0.75rem; }
 .when { color: var(--muted); font-size: 0.9rem; font-variant-numeric: tabular-nums; }
+.userbox { display: flex; align-items: center; gap: 1rem; font-size: 0.95rem; }
+.role { margin-left: 0.5rem; padding: 0.05rem 0.45rem; border: 1px solid var(--line); border-radius: 3px; font-size: 0.8rem; color: var(--muted); }
+.auth { max-width: 26rem; }
+.auth-form { margin-bottom: 1.25rem; }
+.switch-mode { color: var(--muted); }
+.checking { padding-block: 2rem; }

@@ -17,3 +17,18 @@ services:
       - "5173:5173"
     depends_on:
       - backend
+
+  # Runs the follow-up agent on a timer: reminders, escalations, closing.
+  # Set FOLLOWUP_INTERVAL (seconds) in .env; default 300.
+  scheduler:
+    build: ./backend
+    command: ["python", "manage.py", "run_followups", "--loop", "--interval", "${FOLLOWUP_INTERVAL:-300}"]
+    env_file:
+      - .env
+    environment:
+      DB_PATH: /data/db.sqlite3
+      MEDIA_ROOT: /data/media
+    volumes:
+      - ./data:/data
+    depends_on:
+      - backend

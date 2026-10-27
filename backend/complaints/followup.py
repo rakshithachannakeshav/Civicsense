@@ -1,10 +1,11 @@
 from django.utils import timezone
 
 from agents import followup_app
+from .notify import notify_events
 
 
 def check(complaint, add_hours=0):
-    """Run one follow-up check for a complaint and save the outcome.
+    """Run one follow-up check for a complaint, save the outcome and notify.
 
     The graph's clock is hours since the complaint was created.
     add_hours pretends extra time has passed (for testing).
@@ -34,4 +35,8 @@ def check(complaint, add_hours=0):
         "fu_status", "fu_level", "fu_window",
         "fu_due_hour", "fu_reminded", "fu_history",
     ])
+
+    # Save first, then send: a mail failure must not lose the state change,
+    # and an event is only ever emitted once because the state has moved on.
+    notify_events(complaint, result.get("events", []))
     return result

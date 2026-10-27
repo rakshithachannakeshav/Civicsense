@@ -1,0 +1,54 @@
+{
+  "_note": "Example department rules. Replace with real municipal data; one object per desk.",
+  "rules": [
+    {
+      "category": "road_damage",
+      "department": "Roads Dept",
+      "desk": "Major Roads Cell",
+      "sla_hours": 24,
+      "text": "Potholes, craters and damage on main arterial roads, ring roads, flyovers and bus routes with heavy traffic."
+    },
+    {
+      "category": "road_damage",
+      "department": "Roads Dept",
+      "desk": "Ward Engineer",
+      "sla_hours": 72,
+      "text": "Potholes and damage on internal lanes, residential streets, cross roads and footpaths."
+    },
+    {
+      "category": "garbage",
+      "department": "Solid Waste Dept",
+      "desk": "Collection Desk",
+      "sla_hours": 48,
+      "text": "Garbage not collected, missed door-to-door pickup, overflowing bins."
+    },
+    {
+      "category": "garbage",
+      "department": "Solid Waste Dept",
+      "desk": "Bulk Waste Cell",
+      "sla_hours": 72,
+      "text": "Illegal dumping, construction debris, large piles of waste and dead animals on the road."
+    },
+    {
+      "category": "streetlight",
+      "department": "Street Lighting Dept",
+      "desk": "Maintenance Desk",
+      "sla_hours": 72,
+      "text": "Street lamp not working, flickering light, dark road at night."
+    },
+    {
+      "category": "water_leak",
+      "department": "Water Supply Dept",
+      "desk": "Emergency Desk",
+      "sla_hours": 12,
+      "text": "Burst pipes, water gushing onto the road, flooding and major leaks that waste large amounts of water."
+    },
+    {
+      "category": "water_leak",
+      "department": "Water Supply Dept",
+      "desk": "Service Desk",
+      "sla_hours": 72,
+      "text": "Slow leaks, low water pressure, dirty or discoloured water, no supply to a house."
+    }
+  ]
+}

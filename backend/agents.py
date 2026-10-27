@@ -1,13 +1,18 @@
 import base64
+import hashlib
+import json
 import math
 import mimetypes
 import os
+import re
 import sys
 from functools import lru_cache
+from pathlib import Path
 from typing import TypedDict, Literal
 
 from pydantic import BaseModel
 from langchain_core.documents import Document
+from langchain_core.embeddings import Embeddings
 from langchain_core.messages import HumanMessage
 from langchain_core.vectorstores import InMemoryVectorStore
 from langchain_google_genai import ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings
@@ -22,6 +27,11 @@ from langgraph.graph import StateGraph, START, END
 # Embeddings are NOT faked: the duplicate check and department lookup
 # still need GOOGLE_API_KEY.
 FAKE_LLM = os.getenv("FAKE_LLM") == "1"
+
+# FAKE_EMBEDDINGS=1 replaces the Gemini embedding calls with a local hashed
+# bag-of-words vector. It needs no API key or network, so the tests and an
+# offline demo can run. The vectors are crude (shared words mean similar
+# vectors), so use the real embeddings for anything you want to judge.
 
 DESC_T = 0.70   # issue similarity needed to count as the same problem
 LOC_T = 0.75    # place similarity needed to count as the same place
@@ -46,40 +56,56 @@ def get_classifier_llm():
     return get_llm().with_structured_output(Classification)
 
 
+class HashingEmbeddings(Embeddings):
+    """Offline stand-in for the Gemini embedding model (see FAKE_EMBEDDINGS)."""
+
+    DIM = 512
+    STOP = {"a", "an", "the", "is", "are", "was", "of", "on", "in", "at", "to",
+            "and", "for", "near", "not", "has", "have", "been", "very", "this"}
+
+    def _vector(self, text: str) -> list[float]:
+        vec = [0.0] * self.DIM
+        for word in re.findall(r"[a-z0-9]+", text.lower()):
+            if word in self.STOP:
+                continue
+            if len(word) > 3 and word.endswith("s"):
+                word = word[:-1]          # potholes -> pothole
+            digest = hashlib.md5(word.encode()).digest()
+            vec[int.from_bytes(digest[:4], "big") % self.DIM] += 1.0
+        return vec
+
+    def embed_documents(self, texts: list[str]) -> list[list[float]]:
+        return [self._vector(t) for t in texts]
+
+    def embed_query(self, text: str) -> list[float]:
+        return self._vector(text)
+
+
 @lru_cache(maxsize=None)
 def get_embeddings():
+    if os.getenv("FAKE_EMBEDDINGS") == "1":
+        return HashingEmbeddings()
     return GoogleGenerativeAIEmbeddings(model="gemini-embedding-001")
 
 
-# Department rules (made-up examples)
-RULES = [
-    {"category": "road_damage", "department": "Roads Dept",
-     "desk": "Major Roads Cell", "sla_hours": 24,
-     "text": "Potholes, craters and damage on main arterial roads, ring roads, "
-             "flyovers and bus routes with heavy traffic."},
-    {"category": "road_damage", "department": "Roads Dept",
-     "desk": "Ward Engineer", "sla_hours": 72,
-     "text": "Potholes and damage on internal lanes, residential streets, "
-             "cross roads and footpaths."},
-    {"category": "garbage", "department": "Solid Waste Dept",
-     "desk": "Collection Desk", "sla_hours": 48,
-     "text": "Garbage not collected, missed door-to-door pickup, overflowing bins."},
-    {"category": "garbage", "department": "Solid Waste Dept",
-     "desk": "Bulk Waste Cell", "sla_hours": 72,
-     "text": "Illegal dumping, construction debris, large piles of waste "
-             "and dead animals on the road."},
-    {"category": "streetlight", "department": "Street Lighting Dept",
-     "desk": "Maintenance Desk", "sla_hours": 72,
-     "text": "Street lamp not working, flickering light, dark road at night."},
-    {"category": "water_leak", "department": "Water Supply Dept",
-     "desk": "Emergency Desk", "sla_hours": 12,
-     "text": "Burst pipes, water gushing onto the road, flooding "
-             "and major leaks that waste large amounts of water."},
-    {"category": "water_leak", "department": "Water Supply Dept",
-     "desk": "Service Desk", "sla_hours": 72,
-     "text": "Slow leaks, low water pressure, dirty or discoloured water, "
-             "no supply to a house."},
-]
+# Department rules live in rules.json so a city can replace them without
+# touching code. Each rule: category, department, desk, sla_hours, text.
+# The values shipped in that file are made-up examples.
+RULES_FILE = Path(os.getenv("RULES_FILE", Path(__file__).resolve().parent / "rules.json"))
+
+
+def load_rules(path=RULES_FILE):
+    with open(path, encoding="utf-8") as f:
+        rules = json.load(f)["rules"]
+    required = {"category", "department", "desk", "sla_hours", "text"}
+    for i, rule in enumerate(rules):
+        missing = required - rule.keys()
+        if missing:
+            raise ValueError(f"rules.json rule #{i + 1} is missing: {sorted(missing)}")
+    return rules
+
+
+RULES = load_rules()
 
 
 @lru_cache(maxsize=None)
@@ -106,14 +132,17 @@ def cosine(a, b):
 # =====================================================================
 def fake_classify(text: str) -> Classification:
     t = text.lower()
-    if any(w in t for w in ["pothole", "crater", "road"]):
+    # Most specific words first, so "lamp ... road is dark" is not read as road damage
+    if any(w in t for w in ["pothole", "crater"]):
         category = "road_damage"
     elif any(w in t for w in ["garbage", "rubbish", "waste"]):
         category = "garbage"
-    elif any(w in t for w in ["streetlight", "lamp", "light"]):
+    elif any(w in t for w in ["streetlight", "street light", "lamp", "light"]):
         category = "streetlight"
     elif any(w in t for w in ["pipe", "leak", "water"]):
         category = "water_leak"
+    elif "road" in t:
+        category = "road_damage"
     else:
         category = "other"
     high = any(w in t for w in ["dangerous", "school", "burst", "flood", "accident"])
@@ -346,6 +375,7 @@ class FollowUpState(TypedDict, total=False):
     reminded: bool
     now: int          # the clock, in hours since start (simulated)
     history: list
+    events: list      # what this one run did and who should be told (see event())
 
 
 def holder(level, department, desk):
@@ -358,6 +388,15 @@ def holder(level, department, desk):
 
 def note(state, message):
     return state["history"] + [f"[hour {state['now']:>3}] {message}"]
+
+
+def event(kind, level, to, message):
+    """Something a person should be told about.
+
+    The graph only decides; the Django layer reads these and sends the
+    messages. kind: reminder | escalation | critical | closed.
+    """
+    return {"kind": kind, "level": level, "to": to, "message": message}
 
 
 def decide_action(state: FollowUpState):
@@ -375,35 +414,42 @@ def decide_action(state: FollowUpState):
 
 def close_complaint(state: FollowUpState):
     who = holder(state["level"], state["department"], state["desk"])
+    message = f"Resolved. Closed (was with {who})."
     return {"status": "closed",
-            "history": note(state, f"Resolved. Closed (was with {who}).")}
+            "history": note(state, message),
+            "events": [event("closed", state["level"], who, message)]}
 
 
 def send_reminder(state: FollowUpState):
     who = holder(state["level"], state["department"], state["desk"])
+    message = f"Reminder sent to {who}. Due at hour {state['due_hour']}."
     return {"reminded": True,
-            "history": note(state, f"Reminder sent to {who}. "
-                                   f"Due at hour {state['due_hour']}.")}
+            "history": note(state, message),
+            "events": [event("reminder", state["level"], who, message)]}
 
 
 def escalate(state: FollowUpState):
     new_level = state["level"] + 1
     who = holder(new_level, state["department"], state["desk"])
     new_due = state["now"] + ESCALATION_WINDOW
+    message = f"OVERDUE. Escalated to {who}. New deadline: hour {new_due}."
     return {
         "level": new_level,
         "window": ESCALATION_WINDOW,
         "due_hour": new_due,
         "reminded": False,
-        "history": note(state, f"OVERDUE. Escalated to {who}. "
-                               f"New deadline: hour {new_due}."),
+        "history": note(state, message),
+        "events": [event("escalation", new_level, who, message)],
     }
 
 
 def alert_top(state: FollowUpState):
+    message = "Overdue at the top level. Flagged CRITICAL for manual action."
     return {"status": "critical",
-            "history": note(state, "Overdue at the top level. "
-                                   "Flagged CRITICAL for manual action.")}
+            "history": note(state, message),
+            "events": [event("critical", state["level"],
+                             holder(state["level"], state["department"], state["desk"]),
+                             message)]}
 
 
 fu_graph = StateGraph(FollowUpState)

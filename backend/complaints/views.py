@@ -1,13 +1,18 @@
+import logging
+
 from rest_framework import mixins, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import APIException
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from agents import new_record, process_complaint
 from .followup import check
 from .models import Complaint
+from .permissions import IsOfficial, is_official
 from .serializers import ComplaintSerializer
-import traceback
+
+logger = logging.getLogger(__name__)
 
 
 class TriageUnavailable(APIException):
@@ -22,12 +27,24 @@ class ComplaintViewSet(mixins.CreateModelMixin,
     queryset = Complaint.objects.all()
     serializer_class = ComplaintSerializer
 
+    def get_permissions(self):
+        if self.action == "resolve":
+            return [IsOfficial()]
+        return [IsAuthenticated()]
+
+    def get_queryset(self):
+        """Officials see every complaint; citizens see only their own."""
+        if is_official(self.request.user):
+            return Complaint.objects.all()
+        return Complaint.objects.filter(owner=self.request.user)
+
     def perform_create(self, serializer):
-        complaint = serializer.save()
+        complaint = serializer.save(owner=self.request.user)
         complaint.ref = f"C-{complaint.pk}"      # unique, from the database id
         image_path = complaint.photo.path if complaint.photo else None
 
-        # Earlier originals to compare against (the new row has no vectors yet)
+        # Earlier originals to compare against, from everyone's reports (the
+        # new row has no vectors yet)
         known = [
             {"ref": c.ref, "category": c.category,
              "desc_vec": c.desc_vec, "loc_vec": c.loc_vec}
@@ -42,7 +59,7 @@ class ComplaintViewSet(mixins.CreateModelMixin,
                 known=known, complaint_id=complaint.ref,
             )
         except Exception:
-            traceback.print_exc()       # show the real error in the log
+            logger.exception("Triage failed for complaint %s", complaint.ref)
             complaint.delete()          # do not keep a half-processed complaint
             raise TriageUnavailable()  # for example, when the daily quota is used up
 
