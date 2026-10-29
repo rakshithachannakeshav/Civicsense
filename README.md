@@ -60,6 +60,14 @@ The database and uploaded photos are stored in `./data`, so they survive restart
 
 Login uses API tokens. Register and login are rate limited.
 
+## Demo data
+
+`seed_demo` creates demo users (`officer`, `priya`, `arjun`, `meera`, password `demo1234`) and runs nine sample complaints through the real triage pipeline. Some are backdated so the queue shows every follow-up stage: open, reminder sent, escalated, critical, closed, plus a duplicate and one that needs more details. `--reset` deletes all existing complaints first. Re-running without `--reset` skips complaints already seeded.
+
+```
+python manage.py seed_demo --reset          # Docker: docker compose exec backend python manage.py seed_demo --reset
+```
+
 ## Email notifications
 
 By default emails are printed to the backend console (`EMAIL_BACKEND` console), so nothing is sent by accident. To send real mail, set the `EMAIL_HOST`, `EMAIL_PORT`, `EMAIL_HOST_USER`, `EMAIL_HOST_PASSWORD`, `EMAIL_USE_TLS` and `DEFAULT_FROM_EMAIL` lines in `.env` (see `.env.example`).
@@ -76,8 +84,7 @@ Backend:
 
 ```
 cd backend
-pip install -r requirements.txt
-set GOOGLE_API_KEY=your-gemini-key      # PowerShell: $env:GOOGLE_API_KEY="..."
+pip install -r requirements.txt       # settings read ../.env (GOOGLE_API_KEY etc.)
 python manage.py migrate
 python manage.py create_official officer
 python manage.py runserver
