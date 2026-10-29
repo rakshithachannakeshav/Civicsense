@@ -62,7 +62,7 @@ Login uses API tokens. Register and login are rate limited.
 
 ## Demo data
 
-`seed_demo` creates demo users (`officer`, `priya`, `arjun`, `meera`, password `demo1234`) and runs nine sample complaints through the real triage pipeline. Some are backdated so the queue shows every follow-up stage: open, reminder sent, escalated, critical, closed, plus a duplicate and one that needs more details. `--reset` deletes all existing complaints first. Re-running without `--reset` skips complaints already seeded.
+`seed_demo` creates demo users (`officer`, `rakshitha`, `monisha`, `divya`, `sakshi`, password `demo1234`) and runs twenty sample complaints through the real triage pipeline. Some are backdated so the queue shows every follow-up stage: open, reminder sent, escalated, critical, closed, plus duplicates and vague reports that need more details. `--reset` deletes all existing complaints first. Re-running without `--reset` skips complaints already seeded.
 
 ```
 python manage.py seed_demo --reset          # Docker: docker compose exec backend python manage.py seed_demo --reset

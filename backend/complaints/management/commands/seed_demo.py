@@ -22,44 +22,44 @@ DEMO_PASSWORD = "demo1234"
 #   critical    missed every deadline, flagged critical
 #   resolved:N  filed N hours ago, fixed by an official and closed
 SAMPLES = [
-    ("priya", "Huge pothole near the school gate, very dangerous for kids on bikes",
+    ("rakshitha", "Huge pothole near the school gate, very dangerous for kids on bikes",
      "80 Feet Road, Indiranagar, Bengaluru", "open:3"),
-    ("arjun", "Dangerous pothole outside the school, two bikes slipped this morning",
+    ("monisha", "Dangerous pothole outside the school, two bikes slipped this morning",
      "Outside the school gate, 80 Feet Road, Indiranagar", "fresh"),
-    ("priya", "Garbage has not been collected for four days and the bin is overflowing",
+    ("rakshitha", "Garbage has not been collected for four days and the bin is overflowing",
      "5th Cross, Jayanagar 4th Block, Bengaluru", "reminder"),
-    ("arjun", "Street light has not been working for a week, the road is completely dark at night",
+    ("monisha", "Street light has not been working for a week, the road is completely dark at night",
      "27th Main, HSR Layout Sector 2, Bengaluru", "escalated"),
-    ("meera", "Burst water pipe, water flooding the road since early morning",
+    ("divya", "Burst water pipe, water flooding the road since early morning",
      "1st Block, Koramangala, Bengaluru", "resolved:3"),
-    ("meera", "Construction debris and waste dumped on the footpath, people walk on the road",
+    ("divya", "Construction debris and waste dumped on the footpath, people walk on the road",
      "ITPL Main Road, Whitefield, Bengaluru", "critical"),
-    ("priya", "Low water pressure, no supply to our house in the mornings",
+    ("rakshitha", "Low water pressure, no supply to our house in the mornings",
      "12th Cross, Malleshwaram, Bengaluru", "open:5"),
-    ("arjun", "Street lamp flickering all night outside the bus stop",
+    ("monisha", "Street lamp flickering all night outside the bus stop",
      "Bannerghatta Road, BTM Layout, Bengaluru", "open:2"),
-    ("meera", "something is wrong here", "", "fresh"),
-    ("kiran", "Deep crater in the middle of the road after the rains, it nearly caused an accident",
+    ("divya", "something is wrong here", "", "fresh"),
+    ("sakshi", "Deep crater in the middle of the road after the rains, it nearly caused an accident",
      "Outer Ring Road, near Marathahalli bridge, Bengaluru", "open:10"),
-    ("kiran", "Garbage bins overflowing next to the vegetable market, stray dogs spreading the waste",
+    ("sakshi", "Garbage bins overflowing next to the vegetable market, stray dogs spreading the waste",
      "KR Market, Chickpet, Bengaluru", "escalated"),
-    ("priya", "Water pipe leaking at the junction, the road is always wet and slippery",
+    ("rakshitha", "Water pipe leaking at the junction, the road is always wet and slippery",
      "Hebbal flyover service road, Bengaluru", "reminder"),
-    ("arjun", "Three street lights out in a row on the main road, people are afraid to walk at night",
+    ("monisha", "Three street lights out in a row on the main road, people are afraid to walk at night",
      "Sarjapur Road, Bellandur, Bengaluru", "open:20"),
-    ("meera", "Pothole filled with water right outside the metro station exit",
+    ("divya", "Pothole filled with water right outside the metro station exit",
      "Yeshwanthpur metro station, Bengaluru", "resolved:30"),
-    ("kiran", "Rubbish not picked up for a week, the smell is unbearable",
+    ("sakshi", "Rubbish not picked up for a week, the smell is unbearable",
      "3rd Main, Rajajinagar, Bengaluru", "resolved:50"),
-    ("meera", "Pipe leaking at the Hebbal junction, water all over the service road",
+    ("divya", "Pipe leaking at the Hebbal junction, water all over the service road",
      "Hebbal flyover service road, Bengaluru", "fresh"),
-    ("arjun", "Broken footpath slabs along the road, a senior citizen tripped and fell",
+    ("monisha", "Broken footpath slabs along the road, a senior citizen tripped and fell",
      "Church Street, MG Road, Bengaluru", "open:8"),
-    ("kiran", "Street lamp pole bent and hanging over the road after the storm, dangerous",
+    ("sakshi", "Street lamp pole bent and hanging over the road after the storm, dangerous",
      "100 Feet Road, Domlur, Bengaluru", "escalated"),
-    ("priya", "Dead animal and waste lying on the roadside for two days",
+    ("rakshitha", "Dead animal and waste lying on the roadside for two days",
      "Banashankari 2nd Stage, Bengaluru", "reminder"),
-    ("kiran", "Problem near my house, please check", "Vijayanagar, Bengaluru", "fresh"),
+    ("sakshi", "Problem near my house, please check", "Vijayanagar, Bengaluru", "fresh"),
 ]
 
 
@@ -158,7 +158,7 @@ class Command(BaseCommand):
             self.stdout.write(f"Deleted {n} existing complaint row(s).")
 
         self.user("officer", official=True)
-        users = {name: self.user(name) for name in ("priya", "arjun", "meera", "kiran")}
+        users = {name: self.user(name) for name in ("rakshitha", "monisha", "divya", "sakshi")}
 
         for owner, text, location, scenario in SAMPLES:
             if Complaint.objects.filter(owner=users[owner], text=text).exclude(ref="").exists():
@@ -173,5 +173,5 @@ class Command(BaseCommand):
                 f"{c.category or '-':12} {c.desk or c.duplicate_of or '-'}")
 
         self.stdout.write(self.style.SUCCESS(
-            f"Done. Log in as officer / priya / arjun / meera / kiran "
+            f"Done. Log in as officer / rakshitha / monisha / divya / sakshi "
             f"(password {DEMO_PASSWORD} for users created now)."))
