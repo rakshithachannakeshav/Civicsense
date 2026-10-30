@@ -62,11 +62,15 @@ export const logout = () => request("/api/auth/logout/", { method: "POST" });
 export const getMe = () => request("/api/auth/me/");
 
 // Complaints
-export function submitComplaint({ text, location, photo }) {
+export function submitComplaint({ text, location, photo, coords }) {
   const body = new FormData();
   body.append("text", text);
   body.append("location", location);
   if (photo) body.append("photo", photo);
+  if (coords) {
+    body.append("device_lat", coords.lat);
+    body.append("device_lng", coords.lng);
+  }
   return request("/api/complaints/", { method: "POST", body });
 }
 

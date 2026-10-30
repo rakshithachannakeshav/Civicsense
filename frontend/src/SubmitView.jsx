@@ -78,6 +78,9 @@ export default function SubmitView() {
   const [location, setLocation] = useState("");
   const [photo, setPhoto] = useState(null);
   const [preview, setPreview] = useState("");
+  // Device position, sent as a fallback when the photo has no GPS data
+  const [coords, setCoords] = useState(null);
+  const [gps, setGps] = useState("idle"); // idle | locating | ok | failed
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [result, setResult] = useState(null);
@@ -92,12 +95,36 @@ export default function SubmitView() {
     return () => URL.revokeObjectURL(url);
   }, [photo]);
 
+  function locate() {
+    if (!navigator.geolocation) {
+      setGps("failed");
+      return;
+    }
+    setGps("locating");
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setCoords({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+        setGps("ok");
+      },
+      () => {
+        setCoords(null);
+        setGps("failed");
+      },
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 }
+    );
+  }
+
+  function onPhoto(file) {
+    setPhoto(file);
+    if (file && !coords) locate();
+  }
+
   async function onSubmit(event) {
     event.preventDefault();
     setBusy(true);
     setError("");
     try {
-      setResult(await submitComplaint({ text, location, photo }));
+      setResult(await submitComplaint({ text, location, photo, coords }));
     } catch (err) {
       setResult(null);
       setError(err.message);
@@ -110,6 +137,8 @@ export default function SubmitView() {
     setText("");
     setLocation("");
     setPhoto(null);
+    setCoords(null);
+    setGps("idle");
     setResult(null);
     setError("");
   }
@@ -119,8 +148,9 @@ export default function SubmitView() {
       <div className="intro">
         <h1>Report a civic problem</h1>
         <p className="lede">
-          Describe the problem and add a photo if you have one. We send it to
-          the department that handles it and set a deadline for a response.
+          Describe the problem and add a photo taken at the spot. We use the
+          photo's GPS location (or your device's) to pin the exact place, send
+          it to the department that handles it and set a deadline for a response.
         </p>
       </div>
 
@@ -149,14 +179,32 @@ export default function SubmitView() {
           </div>
 
           <div className="field">
-            <label htmlFor="photo">Photo (optional)</label>
+            <label htmlFor="photo">Photo of the problem</label>
             <input
               id="photo"
               type="file"
               accept="image/*"
-              onChange={(e) => setPhoto(e.target.files[0] ?? null)}
+              required
+              onChange={(e) => onPhoto(e.target.files[0] ?? null)}
             />
             {preview && <img className="preview" src={preview} alt="Selected photo" />}
+            {photo && (
+              <p className="quiet small" aria-live="polite">
+                {gps === "locating" && "Getting your location..."}
+                {gps === "ok" &&
+                  `Device location: ${coords.lat.toFixed(5)}, ${coords.lng.toFixed(5)}. ` +
+                    "If the photo has its own GPS data, that is used instead."}
+                {gps === "failed" && (
+                  <>
+                    Could not get your device location, so the photo must contain GPS
+                    data.{" "}
+                    <button type="button" className="linklike" onClick={locate}>
+                      Try again
+                    </button>
+                  </>
+                )}
+              </p>
+            )}
           </div>
 
           {error && (
@@ -165,7 +213,7 @@ export default function SubmitView() {
             </p>
           )}
 
-          <button type="submit" className="primary" disabled={busy || !text.trim()}>
+          <button type="submit" className="primary" disabled={busy || !text.trim() || !photo || gps === "locating"}>
             {busy ? "Submitting..." : "Submit report"}
           </button>
         </form>
@@ -178,6 +226,7 @@ export default function SubmitView() {
               <h2>What happens next</h2>
               <ol>
                 <li>We read your description and photo and work out what the problem is.</li>
+                <li>We take the exact place from the photo's GPS data, or from your device if the photo has none.</li>
                 <li>We check whether someone has already reported the same problem at the same place.</li>
                 <li>We send it to the right department and desk, write the complaint letter and set a deadline.</li>
               </ol>
@@ -187,4 +236,4 @@ export default function SubmitView() {
       </div>
     </>
   );
-}
+}

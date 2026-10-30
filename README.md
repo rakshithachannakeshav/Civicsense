@@ -6,7 +6,9 @@ Built with LangGraph, Gemini, Django REST Framework and React as an Agentic AI p
 
 ## How it works
 
-A complaint (text, location, optional photo) goes through a LangGraph pipeline:
+A complaint (text, location and a required photo) goes through a LangGraph pipeline. Every report must carry a GPS position: the server reads it from the photo's EXIF data, and if the photo has none it uses the position the browser sends (`device_lat`, `device_lng`). A report with neither is rejected. The position and its source (`photo` or `device`) are stored on the complaint and shown to officials with a map link.
+
+The pipeline:
 
 1. **Classifier** reads the text and photo and returns the issue type and severity.
 2. **Duplicate check** compares the complaint against open ones in the same category, using separate similarity scores for the issue (0.70) and for the place (0.75).
@@ -60,6 +62,14 @@ The database and uploaded photos are stored in `./data`, so they survive restart
 
 Login uses API tokens. Register and login are rate limited.
 
+## Demo data
+
+`seed_demo` creates demo users (`officer`, `rakshitha`, `monisha`, `divya`, `sakshi`, password `demo1234`) and runs twenty sample complaints through the real triage pipeline. Some are backdated so the queue shows every follow-up stage: open, reminder sent, escalated, critical, closed, plus duplicates and vague reports that need more details. `--reset` deletes all existing complaints first. Re-running without `--reset` skips complaints already seeded.
+
+```
+python manage.py seed_demo --reset          # Docker: docker compose exec backend python manage.py seed_demo --reset
+```
+
 ## Email notifications
 
 By default emails are printed to the backend console (`EMAIL_BACKEND` console), so nothing is sent by accident. To send real mail, set the `EMAIL_HOST`, `EMAIL_PORT`, `EMAIL_HOST_USER`, `EMAIL_HOST_PASSWORD`, `EMAIL_USE_TLS` and `DEFAULT_FROM_EMAIL` lines in `.env` (see `.env.example`).
@@ -76,8 +86,7 @@ Backend:
 
 ```
 cd backend
-pip install -r requirements.txt
-set GOOGLE_API_KEY=your-gemini-key      # PowerShell: $env:GOOGLE_API_KEY="..."
+pip install -r requirements.txt       # settings read ../.env (GOOGLE_API_KEY etc.)
 python manage.py migrate
 python manage.py create_official officer
 python manage.py runserver
