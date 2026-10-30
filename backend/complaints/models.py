@@ -19,6 +19,11 @@ class Complaint(models.Model):
     location = models.CharField(max_length=255, blank=True)
     photo = models.ImageField(upload_to="photos/", blank=True, null=True)
 
+    # Where the photo was taken (required for new reports; older rows may be empty)
+    latitude = models.FloatField(null=True, blank=True)
+    longitude = models.FloatField(null=True, blank=True)
+    gps_source = models.CharField(max_length=10, blank=True)  # photo | device
+
     # What the agents decided
     ref = models.CharField(max_length=20, blank=True)           # e.g. C-1
     duplicate_of = models.CharField(max_length=20, blank=True)  # ref of the original

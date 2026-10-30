@@ -6,7 +6,9 @@ Built with LangGraph, Gemini, Django REST Framework and React as an Agentic AI p
 
 ## How it works
 
-A complaint (text, location, optional photo) goes through a LangGraph pipeline:
+A complaint (text, location and a required photo) goes through a LangGraph pipeline. Every report must carry a GPS position: the server reads it from the photo's EXIF data, and if the photo has none it uses the position the browser sends (`device_lat`, `device_lng`). A report with neither is rejected. The position and its source (`photo` or `device`) are stored on the complaint and shown to officials with a map link.
+
+The pipeline:
 
 1. **Classifier** reads the text and photo and returns the issue type and severity.
 2. **Duplicate check** compares the complaint against open ones in the same category, using separate similarity scores for the issue (0.70) and for the place (0.75).

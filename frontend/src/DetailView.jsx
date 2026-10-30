@@ -95,6 +95,19 @@ export default function DetailView({ id, official, onBack }) {
         <h2>What was reported</h2>
         <p className="body-text">{c.text}</p>
         <p className="quiet">Location: {c.location || "Not given"}</p>
+        {c.latitude != null && (
+          <p className="quiet">
+            GPS: {c.latitude.toFixed(5)}, {c.longitude.toFixed(5)} (
+            {c.gps_source === "photo" ? "from the photo" : "from the device"}){" "}
+            <a
+              href={`https://www.openstreetmap.org/?mlat=${c.latitude}&mlon=${c.longitude}#map=18/${c.latitude}/${c.longitude}`}
+              target="_blank"
+              rel="noreferrer"
+            >
+              Open map
+            </a>
+          </p>
+        )}
         {c.photo && (
           <img className="preview" src={c.photo} alt="Photo submitted with the report" />
         )}
